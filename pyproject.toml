@@ -1,0 +1,12 @@
+[project]
+name = "roadrunner_iridium_server"
+version = "0.1.0"
+description = "proof of concept simulation server for WebIridium"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "antimony>=3.0.0",
+    "libroadrunner>=2.8.0",
+    "pydantic>=2.11.7",
+    "websockets>=15.0.1",
+]
