@@ -12,7 +12,7 @@ model_config = ConfigDict(
 class BaseAction(BaseModel):
     model_config = model_config
 
-    # Id of the action. Will be the same in the response, so the client
+    # Id of the action. Will be the same in the result, so the client
     # can recognize it.
     id: str
 

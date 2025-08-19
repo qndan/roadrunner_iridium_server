@@ -6,7 +6,7 @@ import antimony
 from roadrunner import RoadRunner
 
 from .actions import ParameterScanOptions
-from .responses import LoadModelResponse
+from .results import LoadModelResult
 
 logger = logging.getLogger(__name__)
 
