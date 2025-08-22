@@ -8,8 +8,8 @@ from websockets.asyncio.server import serve, ServerConnection
 from pydantic import ValidationError
 
 from .simulator import Simulator
-from .actions import Action, TimeCourseAction, LoadModelAction
-from .results import Result, TimeCourseResult, LoadModelResult
+from .actions import Action, BareAction, TimeCourseAction, LoadModelAction
+from .results import Result, ErrorResult, TimeCourseResult, LoadModelResult
 
 MAX_THREADS_PER_SESSION = 4
 
@@ -32,23 +32,12 @@ async def handle(connection: ServerConnection):
         max_workers=MAX_THREADS_PER_SESSION,
         initializer=thread_initializer,
     ) as executor:
-        def handle_message(message: str) -> Result:
+        def handle_message(message: str) -> Result | None:
             # TODO: how are errors handled?
             logger.debug("Message received: %s", message)
 
-            try:
-                action = Action.model_validate_json(message).root
-            except ValidationError:
-                logger.exception("Invalid message: %s", message)
-                return
-
+            action = Action.model_validate_json(message).root
             simulator = local.simulator
-
-            try:
-                simulator.load_code(action.code)
-            except ValueError as e:
-                logger.exception("Conversion error: %s", e.args)
-                return
 
             if action.code:
                 simulator.load_code(action.code)
@@ -56,40 +45,57 @@ async def handle(connection: ServerConnection):
             match action:
                 case LoadModelAction():
                     model_info = simulator.get_model_info()
-                    return LoadModelResult(
+                    return Result(
                         id=action.id,
-                        type="loadModel",
-                        floating_species=model_info.floating_species,
-                        boundary_species=model_info.boundary_species,
-                        reactions=model_info.reactions,
-                        parameters=model_info.parameters,
+                        data=LoadModelResult(
+                            floating_species=model_info.floating_species,
+                            boundary_species=model_info.boundary_species,
+                            reactions=model_info.reactions,
+                            parameters=model_info.parameters
+                        )
                     )
                 case TimeCourseAction():
+                    payload = action.payload
                     result = simulator.simulate_time_course(
-                        action.start_time,
-                        action.end_time,
-                        action.number_of_points,
-                        action.reset_initial_conditions,
-                        action.selection_list,
-                        action.variable_values,
-                        action.parameter_scan_options,
+                        payload.start_time,
+                        payload.end_time,
+                        payload.number_of_points,
+                        payload.reset_initial_conditions,
+                        payload.selection_list,
+                        payload.variable_values,
+                        payload.parameter_scan_options,
                     )
-                    return TimeCourseResult(
+                    return Result(
                         id=action.id,
-                        type="timeCourse",
-                        column_names=result.column_names,
-                        rows=result.rows,
+                        data=TimeCourseResult(
+                            column_names=result.column_names,
+                            rows=result.rows,
+                        )
                     )
         
         async def dispatch_message(message: str):
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(executor, handle_message, message)
+            response = None
+            err = None
+            try:
+                response = await loop.run_in_executor(executor, handle_message, message)
+            except Exception as e:
+                logger.exception("Message handle error: %s", e.args)
+                err = e
 
             if response:
                 await connection.send(response.model_dump_json(by_alias=True))
             else:
+                try:
+                    bare_action = BareAction.model_validate_json(message)
+                    error_result = ErrorResult(
+                        id=bare_action.id,
+                        error_message=str(err.args) if err else "Unexpected error occurred."
+                    )
+                    await connection.send(error_result.model_dump_json(by_alias=True))
                 # TODO: send them an error
-                pass
+                except:
+                    raise
 
         async for message in connection:
             asyncio.create_task(dispatch_message(message))

@@ -14,14 +14,15 @@ class BaseAction(BaseModel):
 
     # Id of the action. Will be the same in the result, so the client
     # can recognize it.
-    id: str
+    id: int
 
     # Antimony code associated with the action.
     # If not present, use the code from the last action.
-    code: str | None = None
-
+    code: str | None = Field(default=None, alias="internalState")
+    
 class LoadModelAction(BaseAction):
     type: Literal["loadModel"]
+    payload: None
 
 class ParameterScanOptions(BaseModel):
     model_config = model_config
@@ -29,8 +30,9 @@ class ParameterScanOptions(BaseModel):
     varying_parameter: str
     varying_parameter_value: float
 
-class TimeCourseAction(BaseAction):
-    type: Literal["timeCourse"]
+class TimeCoursePayload(BaseModel):
+    model_config = model_config
+
     start_time: float
     end_time: float
     number_of_points: int
@@ -40,10 +42,23 @@ class TimeCourseAction(BaseAction):
     variable_values: dict[str, float]
     parameter_scan_options: ParameterScanOptions | None = None
 
-class SteadyStateAction(BaseAction):
-    type: Literal["steadyState"]
+class TimeCourseAction(BaseAction):
+    type: Literal["timeCourse"]
+    payload: TimeCoursePayload
+
+class SteadyStatePayload(BaseModel):
+    model_config = model_config
+
     variable_values: dict[str, float]
     parameter_scan_options: ParameterScanOptions | None = None
+
+class SteadyStateAction(BaseAction):
+    type: Literal["steadyState"]
+    payload: SteadyStatePayload
+
+class BareAction(BaseModel):
+    """This model tries to get the id for error reporting."""
+    id: int
 
 Action = RootModel[
     Annotated[
