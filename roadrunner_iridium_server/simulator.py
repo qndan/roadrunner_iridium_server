@@ -1,12 +1,17 @@
+from typing import Any
 import warnings
 import logging
 from dataclasses import dataclass
 
 import antimony
-from roadrunner import RoadRunner
+from roadrunner import RoadRunner, roadrunner
 
 from .actions import ParameterScanOptions
-from .results import LoadModelResult
+from .results import (
+    LoadModelResult,
+    TimeCourseResult,
+    SteadyStateResult, SteadyStateConcentration, SteadyStateResultItem
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +19,14 @@ REACTIONS = 6 # allReactions
 FLOATING_SPECIES = 11 # varSpecies
 BOUNDARY_SPECIES = 15 # constSpecies
 PARAMETERS = 16 # constFormulas
+
+def named_array_to_result_item(named_array: Any) -> SteadyStateResultItem:
+    return SteadyStateResultItem(
+        rows=named_array.rownames,
+        columns=named_array.colnames,
+        values=list(named_array.view())
+    )
+
 
 class Simulator:
     # The antimony code
@@ -49,27 +62,15 @@ class Simulator:
         self._cached_reactions = self._collect_symbol_names(REACTIONS)
         self._cached_parameters = self._collect_symbol_assignments(PARAMETERS)
 
-    @dataclass
-    class ModelInfo:
-        floating_species: dict[str, float]
-        boundary_species: dict[str, float]
-        reactions: list[str]
-        parameters: dict[str, float]
-
-    def get_model_info(self) -> ModelInfo:
+    def get_model_info(self) -> LoadModelResult:
         """Returns info about the model"""
 
-        return Simulator.ModelInfo(
+        return LoadModelResult(
             floating_species=self._cached_floating_species,
             boundary_species=self._cached_boundary_species,
             reactions=self._cached_reactions,
             parameters=self._cached_parameters,
         )
-
-    @dataclass 
-    class TimeCourseResult:
-        column_names: list[str]
-        rows: list[list[float]]
 
     def simulate_time_course(
         self,
@@ -94,18 +95,9 @@ class Simulator:
         #  - user simulates with sliders A=10
         # B will stay 20 when it should reset to its initial value
         if reset_initial_conditions:
-            self._roadrunner.resetToOrigin()
+            self._roadrunner.resetAll()
 
-        model_keys = self._roadrunner.model.keys()
-        for name, value in variable_values.items():
-            if name in model_keys:
-                self._roadrunner.setValue(name, value)
-
-        if parameter_scan_options:
-            if parameter_scan_options.varying_parameter in model_keys:
-                self._roadrunner.model[
-                    parameter_scan_options.varying_parameter
-                ] = parameter_scan_options.varying_parameter_value
+        self._set_variables(variable_values, parameter_scan_options)
 
         result = self._roadrunner.simulate(
             start_time,
@@ -114,11 +106,49 @@ class Simulator:
             selections=selection_list,
         )
 
-        logging.debug("Simulation done")
+        logger.debug("Simulation done")
 
-        return Simulator.TimeCourseResult(
+        return TimeCourseResult(
             column_names=result.colnames,
             rows=list(map(list, result)),
+        )
+
+    def compute_steady_state(
+        self,
+        variable_values: dict[str, float],
+        parameter_scan_options: ParameterScanOptions | None = None,
+    ) -> SteadyStateResult:
+        logger.debug("Starting steady state")
+
+        if not self._roadrunner:
+            self._roadrunner = RoadRunner(self.sbml)
+
+        self._roadrunner.resetAll()
+        self._set_variables(variable_values, parameter_scan_options)
+
+        concentrations = []
+        for (name, value) in zip(self._roadrunner.steadyStateSelections, self._roadrunner.getSteadyStateValues()):
+            concentrations.append(SteadyStateConcentration(name=name, value=value))
+
+        eigen_values = []
+        for v in self._roadrunner.getFullEigenValues():
+            eigen_values.append((v.real, v.imag))
+
+        elasticities = named_array_to_result_item(self._roadrunner.getScaledElasticityMatrix()) # the order of this is important because for whatever reason some values become nan when the order is off
+        concentration_control = named_array_to_result_item(self._roadrunner.getScaledConcentrationControlCoefficientMatrix())
+        flux_control = named_array_to_result_item(self._roadrunner.getScaledFluxControlCoefficientMatrix())
+        jacobian = named_array_to_result_item(self._roadrunner.getFullJacobian())
+
+        logger.debug("Steady state done")
+
+        return SteadyStateResult(
+            value=self._roadrunner.steadyState(),
+            concentrations=concentrations,
+            eigen_values=eigen_values,
+            jacobian=jacobian,
+            concentration_control=concentration_control,
+            flux_control=flux_control,
+            elasticities=elasticities,
         )
 
     def _convert_antimony_to_sbml(self, code: str) -> str:
@@ -159,4 +189,21 @@ class Simulator:
                 antimony.getNthSymbolInitialAssignmentOfType(main_module_name, type, i)
             )
         return result
+
+    def _set_variables(
+        self,
+        variable_values: dict[str, float],
+        parameter_scan_options: ParameterScanOptions
+    ):
+        model_keys = self._roadrunner.model.keys()
+        for name, value in variable_values.items():
+            if name in model_keys:
+                self._roadrunner.setValue(name, value)
+
+        if parameter_scan_options:
+            if parameter_scan_options.varying_parameter in model_keys:
+                self._roadrunner.model[
+                    parameter_scan_options.varying_parameter
+                ] = parameter_scan_options.varying_parameter_value
+
 

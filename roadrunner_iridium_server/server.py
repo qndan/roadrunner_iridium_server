@@ -8,8 +8,8 @@ from websockets.asyncio.server import serve, ServerConnection
 from pydantic import ValidationError
 
 from .simulator import Simulator
-from .actions import Action, BareAction, TimeCourseAction, LoadModelAction
-from .results import Result, ErrorResult, TimeCourseResult, LoadModelResult
+from .actions import Action, BareAction, TimeCourseAction, SteadyStateAction, LoadModelAction
+from .results import Result, ErrorResult
 
 MAX_THREADS_PER_SESSION = 4
 
@@ -47,30 +47,30 @@ async def handle(connection: ServerConnection):
                     model_info = simulator.get_model_info()
                     return Result(
                         id=action.id,
-                        data=LoadModelResult(
-                            floating_species=model_info.floating_species,
-                            boundary_species=model_info.boundary_species,
-                            reactions=model_info.reactions,
-                            parameters=model_info.parameters
-                        )
+                        data=simulator.get_model_info(),
                     )
                 case TimeCourseAction():
                     payload = action.payload
-                    result = simulator.simulate_time_course(
-                        payload.start_time,
-                        payload.end_time,
-                        payload.number_of_points,
-                        payload.reset_initial_conditions,
-                        payload.selection_list,
-                        payload.variable_values,
-                        payload.parameter_scan_options,
-                    )
                     return Result(
                         id=action.id,
-                        data=TimeCourseResult(
-                            column_names=result.column_names,
-                            rows=result.rows,
-                        )
+                        data=simulator.simulate_time_course(
+                            payload.start_time,
+                            payload.end_time,
+                            payload.number_of_points,
+                            payload.reset_initial_conditions,
+                            payload.selection_list,
+                            payload.variable_values,
+                            payload.parameter_scan_options,
+                        ),
+                    )
+                case SteadyStateAction():
+                    payload = action.payload
+                    return Result(
+                        id=action.id,
+                        data=simulator.compute_steady_state(
+                            variable_values=payload.variable_values,
+                            parameter_scan_options=payload.parameter_scan_options,
+                        ),
                     )
         
         async def dispatch_message(message: str):

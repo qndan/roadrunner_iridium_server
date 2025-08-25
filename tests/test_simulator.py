@@ -1,6 +1,7 @@
 import unittest
 
 from roadrunner_iridium_server.simulator import Simulator
+from roadrunner_iridium_server.results import LoadModelResult
 
 BASIC_TESTING_MODEL = """
 A + $Z -> B; k1*A
@@ -18,7 +19,7 @@ class TestSession(unittest.TestCase):
         result = simulator.get_model_info()
         self.assertEqual(
             result,
-            Simulator.ModelInfo(
+            LoadModelResult(
                 floating_species={ "A": 10, "B": 0, "C": 0 },
                 boundary_species={ "Z": 15 },
                 reactions=["_J0", "_J1"],

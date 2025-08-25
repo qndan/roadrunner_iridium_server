@@ -23,16 +23,31 @@ class TimeCourseResult(BaseModel):
     column_names: list[str]
     rows: list[list[float]]
 
+class SteadyStateConcentration(BaseModel):
+    name: str
+    value: float
+
+class SteadyStateResultItem(BaseModel):
+    columns: list[str]
+    rows: list[str]
+    values: list[list[float]]
+
 class SteadyStateResult(BaseModel):
     model_config = model_config
 
-    variable_values: dict[str, float]
+    value: float
+    concentrations: list[SteadyStateConcentration]
+    eigen_values: list[tuple[float, float]] # (real, imag)
+    jacobian: SteadyStateResultItem
+    concentration_control: SteadyStateResultItem
+    flux_control: SteadyStateResultItem
+    elasticities: SteadyStateResultItem
 
 class Result(BaseModel):
     model_config = model_config
 
     id: int
-    data: LoadModelResult | TimeCourseResult | SteadyStateResult
+    data: LoadModelResult | TimeCourseResult | SteadyStateResult | SteadyStateResult
 
 class ErrorResult(BaseModel):
     model_config = model_config
