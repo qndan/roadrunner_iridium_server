@@ -18,7 +18,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 async def start(host: str, port: int) -> None:
     logger.info("Starting server on %s:%d", host, port)
 
-    async with serve(handle, host, port) as server:
+    async with serve(handle, host, port, max_size=999_999_999_999) as server:
         await server.serve_forever()
 
 local = threading.local()
