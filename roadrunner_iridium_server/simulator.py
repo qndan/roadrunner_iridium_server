@@ -27,7 +27,6 @@ def named_array_to_result_item(named_array: Any) -> SteadyStateResultItem:
         values=list(named_array.view())
     )
 
-
 class Simulator:
     # The antimony code
     code: str | None
@@ -50,17 +49,29 @@ class Simulator:
 
         Throws ValueError on failure
         """
+        if self.code == code:
+            return
+
         self.code = code
 
         sbml = self._convert_antimony_to_sbml(code)
         self.sbml = sbml
 
-        self._roadrunner = None # invalidate the current one
+        self._roadrunner = RoadRunner(self.sbml)
 
-        self._cached_floating_species = self._collect_symbol_assignments(FLOATING_SPECIES)
-        self._cached_boundary_species = self._collect_symbol_assignments(BOUNDARY_SPECIES)
-        self._cached_reactions = self._collect_symbol_names(REACTIONS)
-        self._cached_parameters = self._collect_symbol_assignments(PARAMETERS)
+        self._cached_floating_species = {}
+        for (id, value) in zip(self._roadrunner.model.getFloatingSpeciesIds(), self._roadrunner.model.getFloatingSpeciesConcentrations()):
+            self._cached_floating_species[id] = value
+
+        self._cached_boundary_species = {}
+        for (id, value) in zip(self._roadrunner.model.getBoundarySpeciesIds(), self._roadrunner.model.getBoundarySpeciesConcentrations()):
+            self._cached_boundary_species[id] = value
+
+        self._cached_reactions = list(self._roadrunner.model.getReactionIds())
+        
+        self._cached_parameters = {}
+        for (id, value) in zip(self._roadrunner.model.getGlobalParameterIds(), self._roadrunner.model.getGlobalParameterValues()):
+            self._cached_parameters[id] = value
 
     def get_model_info(self) -> LoadModelResult:
         """Returns info about the model"""
@@ -83,9 +94,6 @@ class Simulator:
         parameter_scan_options: ParameterScanOptions | None = None,
     ) -> TimeCourseResult:
         logger.debug("Starting simulation")
-
-        if not self._roadrunner:
-            self._roadrunner = RoadRunner(self.sbml)
 
         # this is incorrect behavior when `reset_initial_conditions` is false
         # and `variable_values` are being changed.
