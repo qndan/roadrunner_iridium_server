@@ -88,9 +88,10 @@ async def handle(connection: ServerConnection):
             else:
                 try:
                     bare_action = BareAction.model_validate_json(message)
+                    message = " AND ".join(map(str, err.args))
                     error_result = ErrorResult(
                         id=bare_action.id,
-                        error_message=str(err.args) if err else "Unexpected error occurred."
+                        error_message=message if err else "Unexpected error occurred."
                     )
                     await connection.send(error_result.model_dump_json(by_alias=True))
                 # TODO: send them an error
